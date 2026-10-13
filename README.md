@@ -12,7 +12,7 @@ artificial de código abierto**.
 | Imágenes de entrada | **Sentinel-2** (Agencia Espacial Europea, resolución 10 m) |
 | Modelo de IA | **Dynamic World** ([dynamicworld.app](https://dynamicworld.app)) — red neuronal de código abierto de Google + WRI |
 | Plataforma de cómputo | **Google Earth Engine** (todo el procesamiento ocurre en la nube; tu PC no necesita GPU) |
-| Límites administrativos | Colección **FAO/GAUL 2015** disponible en Earth Engine |
+| Límites administrativos | Colección **FAO/GAUL 2025** disponible en Earth Engine |
 
 El modelo clasifica **cada píxel** de la imagen en una de 9 clases de
 cobertura, promediando la probabilidad a lo largo de todas las escenas
@@ -31,6 +31,27 @@ sin nubes del período de análisis.
 | 6 | Suelo desnudo | 🟫 Arena |
 | 7 | Nieve / hielo | ⚪ Blanco |
 | 8 | Vegetación inundada | 🟦 Turquesa |
+
+## Resultados obtenidos
+
+Ejecución del 13 de octubre de 2026, con 94 escenas de Sentinel-2
+(enero 2025 → octubre 2026) sobre los 96.2 km² de los dos municipios:
+
+| Cobertura | Superficie |
+|---|---|
+| Bosque / árboles | 56.83% |
+| Área urbana | 34.15% |
+| Pastizales | 7.75% |
+| Matorral | 0.67% |
+| Cultivos | 0.54% |
+| Suelo desnudo | 0.05% |
+| Agua | 0.02% |
+
+Se observa claramente la franja urbana del norte (valle de Aburrá) y la
+masa forestal del sureste rural de Envigado (corregimientos de Altavista
+y Guayabal).
+
+![Mapa de cobertura terrestre](salidas/mapa_cobertura_sabaneta_envigado.png)
 
 ## Requisitos
 
