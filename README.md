@@ -105,7 +105,7 @@ un solo archivo (imágenes en base64 + librerías incrustadas), así que
 
 | Herramienta | Qué hace |
 |---|---|
-| **Divisor deslizante** (⟶) | Arrástralo con el mouse para revelar la imagen satelital a un lado y la clasificación de la IA al otro. Es la misma idea que la herramienta de comparación de **ERDAS Imagine**. Doble clic lo devuelve al centro. |
+| **Divisor deslizante** (⟶) | La **imagen satelital queda de fondo, siempre visible**. Arrastra el divisor para controlar cuánto de la **clasificación** se superpone: la capa de coberturas aparece o desaparece sobre la fotografía real. Es la misma idea que la herramienta de comparación de **ERDAS Imagine**, y facilita comprobar si la IA acertó en cada zona. Doble clic devuelve el divisor al centro. |
 | **Modo** | Alterna entre *Comparar (swipe)*, *Solo clasificación* y *Solo satelital*. |
 | **Capas** | Enciende o apaga los límites municipales, los nombres y el mapa base. |
 | **Mapa base** | Elige entre cuatro estilos gratuitos y sin clave: *Satélite*, *Calles* y *Topográfico* (de Esri), y *Topográfico* (OpenTopoMap). |

@@ -3,8 +3,10 @@
 Genera un archivo HTML autocontenido que se abre con doble clic y ofrece:
 
   • Un comparador "swipe" arrastrable (como la herramienta equivalente de
-    ERDAS Imagine): un divisor separa la imagen satelital de la
-    clasificación y se mueve con el mouse.
+    ERDAS Imagine): la imagen satelital queda de fondo siempre visible y
+    un divisor controla cuánto de la clasificación se superpone. Al
+    arrastrar, la capa de coberturas aparece o desaparece sobre la
+    fotografía real, lo que facilita comprobar si la IA acertó.
   • Un panel de capas para encender/apagar cada elemento.
   • Zoom, desplazamiento y lectura de coordenadas.
 
@@ -539,25 +541,23 @@ var modoActual = 'swipe';
 var elDivisor  = document.getElementById('divisor');
 
 function aplicarClip() {
-  var elIzq = sat.getElement();
-  var elDer = clas.getElement();
-  if (!elIzq || !elDer) return;
+  var elClas = clas.getElement();
+  if (!elClas) return;
 
   var rect = mapa.getContainer().getBoundingClientRect();
   var xDivisor = rect.left + posDivisor * rect.width;
 
-  /* Recorta la capa satelital por su derecha y la clasificada por su
-     izquierda: así cada lado muestra solo su capa hasta el divisor. */
-  var rIzq = elIzq.getBoundingClientRect();
-  var rDer = elDer.getBoundingClientRect();
-  elIzq.style.clipPath = 'inset(0 ' + Math.max(0, rIzq.right - xDivisor) + 'px 0 0)';
-  elDer.style.clipPath = 'inset(0 0 0 ' + Math.max(0, xDivisor - rDer.left) + 'px)';
+  /* La imagen satelital es la capa base y SIEMPRE se ve completa.
+     Lo que se recorta es la clasificación: se oculta a la izquierda del
+     divisor, de modo que al arrastrar la capa de coberturas va
+     descubriendo la fotografía real que tiene debajo. */
+  var rClas = elClas.getBoundingClientRect();
+  elClas.style.clipPath = 'inset(0 0 0 ' + Math.max(0, xDivisor - rClas.left) + 'px)';
 }
 
 function quitarClip() {
-  [sat.getElement(), clas.getElement()].forEach(function (el) {
-    if (el) el.style.clipPath = 'none';
-  });
+  var elClas = clas.getElement();
+  if (elClas) elClas.style.clipPath = 'none';
 }
 
 function refrescar() {
@@ -569,8 +569,15 @@ function aplicarModo() {
   var enMapa = function (capa) { return mapa.hasLayer(capa); };
 
   if (modoActual === 'swipe') {
-    if (!enMapa(sat))  mapa.addLayer(sat);
-    if (!enMapa(clas)) mapa.addLayer(clas);
+    /* El orden de las capas importa: la satelital es la base y la
+       clasificación va ENCIMA, porque es la que se recorta con el
+       divisor. Se quitan y se vuelven a añadir en el orden correcto
+       por si antes estaban invertidas en otro modo. Al ser imágenes
+       incrustadas en el HTML, el reordenamiento es instantáneo. */
+    if (enMapa(sat))  mapa.removeLayer(sat);
+    if (enMapa(clas)) mapa.removeLayer(clas);
+    mapa.addLayer(sat);
+    mapa.addLayer(clas);
     elDivisor.classList.remove('oculto');
   } else if (modoActual === 'clas') {
     quitarClip();
