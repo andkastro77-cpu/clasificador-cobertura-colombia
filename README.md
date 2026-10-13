@@ -108,7 +108,7 @@ un solo archivo (imágenes en base64 + librerías incrustadas), así que
 | **Divisor deslizante** (⟶) | Arrástralo con el mouse para revelar la imagen satelital a un lado y la clasificación de la IA al otro. Es la misma idea que la herramienta de comparación de **ERDAS Imagine**. Doble clic lo devuelve al centro. |
 | **Modo** | Alterna entre *Comparar (swipe)*, *Solo clasificación* y *Solo satelital*. |
 | **Capas** | Enciende o apaga los límites municipales, los nombres y el mapa base. |
-| **Mapa base** | Elige entre cuatro estilos: *Voyager* y *Claro* (de CARTO), *Satélite* (Esri) y *OpenStreetMap*. |
+| **Mapa base** | Elige entre cuatro estilos gratuitos y sin clave: *Satélite*, *Calles* y *Topográfico* (de Esri), y *Topográfico* (OpenTopoMap). |
 | **Leyenda** | Muestra los 9 tipos de cobertura con su porcentaje calculado. |
 
 La imagen satelital es una **composición en color natural** (rojo, verde y
@@ -116,13 +116,18 @@ azul) de Sentinel-2, promediando todas las escenas sin nubes del período
 para eliminar las nubes. Las dos capas se descargan con el mismo tamaño
 de píxel para que el divisor compare exactamente el mismo terreno.
 
-> **¿Por qué no OpenStreetMap directamente?** Los servidores de tiles de
-> OSM son comunitarios y bloquean con error 403 las peticiones que llegan
-> desde un archivo local (`file://`), porque no pueden verificar el
-> origen. Por eso el mapa base por defecto es **CARTO**, que ofrece
-> estilos gratuitos construidos sobre los mismos datos de OSM sin esa
-> restricción. OpenStreetMap sigue disponible en el selector por si
-> abres el visor desde un servidor web.
+> **¿Por qué no OpenStreetMap ni CARTO?** Los proveedores más conocidos
+> no sirven para un archivo abierto con doble clic:
+> - **OpenStreetMap** bloquea con error 403 las peticiones desde un
+>   archivo local (`file://`), porque sin la cabecera `Referer` no puede
+>   verificar el origen. El navegador no puede enviarla, así que no hay
+>   forma de evitarlo desde el código.
+> - **CARTO** exige una clave de API y, sin ella, muestra una losa con la
+>   leyenda «API KEY REQUIRED» en vez del mapa.
+>
+> Por eso se usan los servicios de **Esri** (ArcGIS Online) y
+> **OpenTopoMap**, que son gratuitos, no piden clave y no revisan el
+> origen de la petición.
 
 Para cambiar el ancho de las capas (más detalle = archivo más pesado),
 ajusta `ANCHO_MAXIMO` en `comparar.py`. Para desactivar el visor, pon

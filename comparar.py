@@ -422,10 +422,10 @@ html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
     <label><input type="checkbox" id="cNombres" checked> Nombres</label>
     <label><input type="checkbox" id="cBase" checked> Mapa base</label>
     <select id="selBase" style="width:100%;margin-top:5px;padding:3px">
-      <option value="voyager">Voyager (calles)</option>
-      <option value="claro">Claro (minimalista)</option>
       <option value="satelite">Satélite (Esri)</option>
-      <option value="osm">OpenStreetMap</option>
+      <option value="calles">Calles (Esri)</option>
+      <option value="topografico">Topográfico (Esri)</option>
+      <option value="opentopo">Topográfico (OpenTopoMap)</option>
     </select>
   </div>
 
@@ -459,26 +459,30 @@ var mapa = L.map('mapa', {zoomSnap: 0, zoomDelta: 0.5}).fitBounds(LIMITES, {padd
 L.control.scale({imperial: false}).addTo(mapa);
 
 /* Mapas base.
-   No se usa tile.openstreetmap.org directamente: OSM bloquea con error 403
-   las peticiones que llegan desde un archivo local (file://), porque no
-   pueden verificar el origen. CARTO ofrece estilos gratuitos construidos
-   sobre los mismos datos de OSM, sin esa restricción. */
+   Requisito: funcionar sin clave de API y sin bloquearse al abrir el
+   archivo con doble clic (file://).
+     · tile.openstreetmap.org  -> devuelve error 403 «Access blocked»,
+       porque no puede verificar el origen de la petición.
+     · basemaps.cartocdn.com   -> muestra una losa «API KEY REQUIRED».
+   Los servicios de Esri (ArcGIS Online) y OpenTopoMap sí son gratuitos,
+   no exigen clave y no revisan el encabezado Referer. */
 var BASEMAPAS = {
-  voyager: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
-    sub: 'abcd', attr: '© OpenStreetMap · © CARTO'
-  },
-  claro: {
-    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png',
-    sub: 'abcd', attr: '© OpenStreetMap · © CARTO'
-  },
   satelite: {
+    /* Ojo: Esri ordena la URL como {z}/{y}/{x}, no {z}/{x}/{y}. */
     url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
     sub: '', attr: 'Imágenes: Esri, Maxar, Earthstar Geographics'
   },
-  osm: {
-    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-    sub: 'abc', attr: '© OpenStreetMap'
+  calles: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}',
+    sub: '', attr: '© Esri, HERE, Garmin, OpenStreetMap'
+  },
+  topografico: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Topo_Map/MapServer/tile/{z}/{y}/{x}',
+    sub: '', attr: '© Esri, HERE, Garmin, OpenStreetMap'
+  },
+  opentopo: {
+    url: 'https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png',
+    sub: 'abc', attr: '© OpenTopoMap (CC-BY-SA) · © OpenStreetMap'
   }
 };
 
@@ -495,7 +499,7 @@ function cambiarBase(clave) {
      clasificación siempre quedan encima del mapa base. */
   capaBase.addTo(mapa);
 }
-cambiarBase('voyager');
+cambiarBase('satelite');
 
 var sat  = L.imageOverlay(URL_SAT,  LIMITES).addTo(mapa);
 var clas = L.imageOverlay(URL_CLAS, LIMITES).addTo(mapa);
