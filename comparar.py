@@ -420,7 +420,13 @@ html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
     <b>Capas</b>
     <label><input type="checkbox" id="cLimites" checked> Límites municipales</label>
     <label><input type="checkbox" id="cNombres" checked> Nombres</label>
-    <label><input type="checkbox" id="cCalles" checked> Mapa base de calles</label>
+    <label><input type="checkbox" id="cBase" checked> Mapa base</label>
+    <select id="selBase" style="width:100%;margin-top:5px;padding:3px">
+      <option value="voyager">Voyager (calles)</option>
+      <option value="claro">Claro (minimalista)</option>
+      <option value="satelite">Satélite (Esri)</option>
+      <option value="osm">OpenStreetMap</option>
+    </select>
   </div>
 
   <div class="grupo" style="margin-bottom:0">
@@ -452,9 +458,44 @@ var PORCENTAJES = @@PORCENTAJES@@;
 var mapa = L.map('mapa', {zoomSnap: 0, zoomDelta: 0.5}).fitBounds(LIMITES, {padding: [24, 24]});
 L.control.scale({imperial: false}).addTo(mapa);
 
-var calles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  maxZoom: 19, attribution: '© OpenStreetMap'
-}).addTo(mapa);
+/* Mapas base.
+   No se usa tile.openstreetmap.org directamente: OSM bloquea con error 403
+   las peticiones que llegan desde un archivo local (file://), porque no
+   pueden verificar el origen. CARTO ofrece estilos gratuitos construidos
+   sobre los mismos datos de OSM, sin esa restricción. */
+var BASEMAPAS = {
+  voyager: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png',
+    sub: 'abcd', attr: '© OpenStreetMap · © CARTO'
+  },
+  claro: {
+    url: 'https://{s}.basemaps.cartocdn.com/rastertiles/light_all/{z}/{x}/{y}{r}.png',
+    sub: 'abcd', attr: '© OpenStreetMap · © CARTO'
+  },
+  satelite: {
+    url: 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+    sub: '', attr: 'Imágenes: Esri, Maxar, Earthstar Geographics'
+  },
+  osm: {
+    url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+    sub: 'abc', attr: '© OpenStreetMap'
+  }
+};
+
+var capaBase = null;
+function cambiarBase(clave) {
+  var def = BASEMAPAS[clave];
+  if (!def) return;
+  if (capaBase) mapa.removeLayer(capaBase);
+  capaBase = L.tileLayer(def.url, {
+    maxZoom: 19, attribution: def.attr, subdomains: def.sub
+  });
+  /* Los tiles van en el panel de teselas (tilePane), que Leaflet dibuja
+     por debajo de los imageOverlay, así que la imagen satelital y la
+     clasificación siempre quedan encima del mapa base. */
+  capaBase.addTo(mapa);
+}
+cambiarBase('voyager');
 
 var sat  = L.imageOverlay(URL_SAT,  LIMITES).addTo(mapa);
 var clas = L.imageOverlay(URL_CLAS, LIMITES).addTo(mapa);
@@ -578,8 +619,12 @@ document.getElementById('cLimites').addEventListener('change', function (e) {
 document.getElementById('cNombres').addEventListener('change', function (e) {
   if (e.target.checked) mapa.addLayer(capaNombres); else mapa.removeLayer(capaNombres);
 });
-document.getElementById('cCalles').addEventListener('change', function (e) {
-  if (e.target.checked) mapa.addLayer(calles); else mapa.removeLayer(calles);
+document.getElementById('cBase').addEventListener('change', function (e) {
+  if (e.target.checked) cambiarBase(document.getElementById('selBase').value);
+  else if (capaBase) { mapa.removeLayer(capaBase); capaBase = null; }
+});
+document.getElementById('selBase').addEventListener('change', function (e) {
+  if (document.getElementById('cBase').checked) cambiarBase(e.target.value);
 });
 
 /* Mantener el recorte alineado al mover o hacer zoom */
