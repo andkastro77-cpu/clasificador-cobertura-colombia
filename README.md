@@ -93,6 +93,22 @@ Los resultados se guardan en la carpeta `salidas/`:
 - **`estadisticas_sabaneta_envigado.csv`** — porcentaje de superficie por tipo de cobertura
 - **`cobertura_sabaneta_envigado.tif`** — ráster georreferenciado (compatible con QGIS)
 
+## Visualizar los resultados
+
+| Resultado | Cómo verlo |
+|---|---|
+| Mapa PNG | Doble clic en el archivo (VS Code lo muestra sin salir) |
+| Estadísticas CSV | Abrirlo como texto, o con la extensión *Rainbow CSV* para verlo en columnas |
+| Ráster GeoTIFF | Con **QGIS**, o ejecutando el script incluido: |
+
+```bash
+python ver_raster.py
+```
+
+Este script muestra el GeoTIFF en pantalla con sus coordenadas UTM, sin
+necesidad de instalar QGIS. Útil para inspeccionar el ráster completo
+(sin el recorte municipal que aplica `main.py`).
+
 ## Estructura del proyecto
 
 ```
@@ -103,6 +119,7 @@ clasificador-cobertura-colombia/
 ├── clasificar.py  # Motor: Sentinel-2 + Dynamic World
 ├── reporte.py     # Mapa PNG, estadísticas CSV y descarga GeoTIFF
 ├── main.py        # Orquestador del flujo completo
+├── ver_raster.py  # Muestra el GeoTIFF en pantalla (alternativa a QGIS)
 ├── requirements.txt
 └── salidas/       # Resultados generados
 ```
