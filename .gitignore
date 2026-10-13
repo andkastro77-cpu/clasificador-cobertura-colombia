@@ -1,0 +1,16 @@
+# Entorno virtual
+.venv/
+venv/
+
+# Credenciales y caché (NUNCA subir)
+config/earthengine/
+.credentials/
+*.json.key
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Salidas pesadas (el mapa PNG y CSV sí se pueden subir)
+salidas/*.tif
