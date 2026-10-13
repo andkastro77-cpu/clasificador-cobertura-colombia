@@ -111,6 +111,23 @@ un solo archivo (imágenes en base64 + librerías incrustadas), así que
 | **Mapa base** | Elige entre cuatro estilos gratuitos y sin clave: *Satélite*, *Calles* y *Topográfico* (de Esri), y *Topográfico* (OpenTopoMap). |
 | **Leyenda** | Muestra los 9 tipos de cobertura con su porcentaje calculado. |
 
+La disposición usa una **barra superior de ancho completo** y un **panel
+lateral izquierdo en gris oscuro** con dos módulos: *Tipos de cobertura*
+arriba y *Visualización* debajo. El mapa ocupa el resto de la pantalla,
+y el encuadre y el divisor se calculan descontando estos paneles para que
+los municipios queden centrados en el área realmente visible.
+
+**Los límites municipales son los polígonos reales**, exportados desde la
+misma colección de **FAO/GAUL** con la que se recortó la clasificación.
+Por eso la línea gris discontinua calza **exactamente** con el borde de
+los colores. (En una versión anterior se dibujaban rectángulos como
+referencia simplificada, lo que no se parecía en nada a los municipios.)
+Los polígonos se simplifican a 100 m de tolerancia para que el GeoJSON
+pese ~3 KB en lugar de decenas, sin diferencia visible a la escala del
+visor. Los nombres se anclan al **centroide por área** que calcula Earth
+Engine, no al promedio de vértices, que quedaría desplazado hacia la zona
+donde el contorno tiene más puntos.
+
 La imagen satelital es una **composición en color natural** (rojo, verde y
 azul) de Sentinel-2, promediando todas las escenas sin nubes del período
 para eliminar las nubes. Las dos capas se descargan con el mismo tamaño

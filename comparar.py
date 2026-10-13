@@ -177,50 +177,93 @@ def _filas_leyenda() -> str:
     )
 
 
-def _etiquetas_nombres(nombres: list, limites: list) -> list:
-    """Coloca una etiqueta por municipio, repartidas horizontalmente."""
-    sur, oeste = limites[0]
-    norte, este = limites[1]
-    cantidad = max(len(nombres), 1)
-    etiquetas = []
-    for indice, nombre in enumerate(nombres):
-        lon = oeste + (este - oeste) * ((indice + 0.5) / cantidad)
-        lat = sur + (norte - sur) * 0.5
-        etiquetas.append({"nombre": nombre, "coords": [lat, lon]})
-    return etiquetas
+def _extraer_limites(info: dict) -> tuple[list, dict, list]:
+    """Convierte la colección de Earth Engine en datos para el visor.
 
+    Devuelve:
+      · nombres   — lista con el nombre de cada municipio
+      · geojson   — FeatureCollection con los polígonos reales
+      · etiquetas — [{nombre, coords:[lat, lon]}] ancladas al centroide
 
-def _geojson_referencia(nombres: list, limites: list) -> dict:
-    """GeoJSON simple: un rectángulo por municipio como referencia.
-
-    Los límites reales son complejos y aumentarían mucho el tamaño del
-    HTML. Estos rectángulos dan contexto geográfico sin pesar; si
-    necesitas los polígonos exactos, abre el GeoTIFF en QGIS.
+    Los polígonos salen de la MISMA colección con la que se recortó la
+    clasificación, por eso el contorno coincide exactamente con el borde
+    de los colores. Antes se dibujaban rectángulos como referencia, lo
+    que no se parecía en nada a los municipios.
     """
-    sur, oeste = limites[0]
-    norte, este = limites[1]
-    ancho = (este - oeste) / max(len(nombres), 1)
+    nombres: list = []
+    caracteristicas: list = []
+    etiquetas: list = []
 
-    caracteristicas = []
-    for indice in range(len(nombres)):
-        o = oeste + ancho * indice
-        e = oeste + ancho * (indice + 1)
-        anillo = [[o, sur], [e, sur], [e, norte], [o, norte], [o, sur]]
+    for feat in info.get("features", []):
+        props = feat.get("properties", {})
+        nombre = props.get("GAUL2_NAME") or props.get("ADM2_NAME", "")
+        geometria = feat.get("geometry") or {}
+
+        # Se conserva únicamente el nombre: las propiedades de GAUL son
+        # extensas y el visor no las usa, así el HTML pesa menos.
+        nombres.append(nombre)
         caracteristicas.append(
             {
                 "type": "Feature",
-                "properties": {"nombre": nombres[indice]},
-                "geometry": {"type": "Polygon", "coordinates": [anillo]},
+                "properties": {"nombre": nombre},
+                "geometry": geometria,
             }
         )
-    return {"type": "FeatureCollection", "features": caracteristicas}
+
+        centro = _centroide_servidor(props) or _centroide(geometria)
+        if centro:
+            lon, lat = centro
+            etiquetas.append({"nombre": nombre, "coords": [lat, lon]})
+
+    geojson = {"type": "FeatureCollection", "features": caracteristicas}
+    return nombres, geojson, etiquetas
+
+
+def _centroide_servidor(props: dict) -> tuple[float, float] | None:
+    """Lee el centroide real (ponderado por área) que calcula Earth Engine."""
+    lon = props.get("__lon")
+    lat = props.get("__lat")
+    if lon is None or lat is None:
+        return None
+    return float(lon), float(lat)
+
+
+def _centroide(geometria: dict) -> tuple[float, float] | None:
+    """Promedio simple de los vértices del anillo exterior.
+
+    Funciona como respaldo si Earth Engine no devuelve el centroide real.
+    Ojo: no es el centroide del área, sino la media de los puntos, así que
+    tiende a alejarse hacia la zona donde el contorno tiene más vértices.
+    """
+    tipo = geometria.get("type")
+    coords = geometria.get("coordinates")
+    if not coords:
+        return None
+
+    if tipo == "Polygon":
+        anillos = coords
+    elif tipo == "MultiPolygon":
+        # Cada polígono es una lista de anillos: se aplanan todos.
+        anillos = [anillo for poligono in coords for anillo in poligono]
+    else:
+        return None
+
+    if not anillos:
+        return None
+
+    # El anillo con más vértices es el contorno exterior del municipio.
+    anillo = max(anillos, key=len)
+    lons = [punto[0] for punto in anillo]
+    lats = [punto[1] for punto in anillo]
+    return sum(lons) / len(lons), sum(lats) / len(lats)
 
 
 def generar_html(
     bytes_sat: bytes,
     bytes_clas: bytes,
     limites: list,
-    nombres: list,
+    geojson: dict,
+    etiquetas: list,
     porcentajes: dict,
 ) -> str:
     """Construye el archivo HTML autocontenido del visor."""
@@ -235,14 +278,16 @@ def generar_html(
         "@@IMG_SAT@@"   : _a_base64(bytes_sat, "image/jpeg"),
         "@@IMG_CLAS@@"  : _a_base64(bytes_clas, "image/png"),
         "@@LIMITES@@"   : json.dumps(limites),
-        "@@GEOJSON@@"   : json.dumps(_geojson_referencia(nombres, limites)),
-        "@@ETIQUETAS@@" : json.dumps(_etiquetas_nombres(nombres, limites)),
+        "@@GEOJSON@@"   : json.dumps(geojson),
+        "@@ETIQUETAS@@" : json.dumps(etiquetas),
         "@@PORCENTAJES@@" : json.dumps(
             [round(porcentajes.get(c, 0.0), 4) for c in sorted(config.CLASES)]
         ),
         "@@LEYENDA@@"    : _filas_leyenda(),
         "@@RESUMEN@@"    : _resumen_html(porcentajes),
-        "@@TITULOS@@"    : ", ".join(nombres),
+        "@@TITULOS@@"    : ", ".join(
+            e["nombre"] for e in etiquetas
+        ) or "Municipios",
         "@@FECHA_INICIO@@" : config.FECHA_INICIO,
         "@@FECHA_FIN@@"    : config.FECHA_FIN,
     }
@@ -256,10 +301,10 @@ def generar_html(
 def _resumen_html(porcentajes: dict) -> str:
     """Filas compactas con las dos coberturas dominantes."""
     if not porcentajes:
-        return '<span style="color:#888">Sin datos</span>'
+        return '<span style="color:#9b9ba3">Sin datos</span>'
     principales = sorted(porcentajes.items(), key=lambda x: -x[1])[:2]
     return "".join(
-        '<div style="display:flex;justify-content:space-between;margin:2px 0">'
+        '<div class="resumen-fila">'
         f"<span>{config.CLASES[clase]['nombre']}</span>"
         f"<b>{pct:.1f}%</b></div>"
         for clase, pct in principales
@@ -279,13 +324,22 @@ def crear_comparacion(
     """Genera el HTML del visor y lo abre en el navegador."""
     carpeta.mkdir(exist_ok=True)
 
-    nombres = [
-        props.get("GAUL2_NAME") or props.get("ADM2_NAME", "")
-        for props in (
-            feat.get("properties", {})
-            for feat in municipios.getInfo()["features"]
-        )
-    ]
+    # Se simplifican los polígonos a 100 m de tolerancia: el visor se ve
+    # igual (la capa se muestra a ~12 m/px) pero el GeoJSON pesa ~3 KB en
+    # vez de decenas. Sale de la MISMA fuente con la que se recortó la
+    # clasificación, por eso las líneas calzan exactamente con el borde.
+    # El centroide se calcula en el servidor: promediar los vértices
+    # desde Python desplaza la etiqueta hacia donde el contorno tiene más
+    # puntos, no hacia el centro real del municipio.
+    simplificados = municipios.map(
+        lambda f: f
+        .setGeometry(f.geometry().simplify(100))
+        .set("__lon", f.geometry().centroid().coordinates().get(0))
+        .set("__lat", f.geometry().centroid().coordinates().get(1))
+    )
+    info = simplificados.getInfo()
+
+    nombres, geojson, etiquetas = _extraer_limites(info)
 
     satelital = imagen_satelital(geometria)
     clasifica_colores = clasificacion_visual(imagen_clasificada)
@@ -293,7 +347,9 @@ def crear_comparacion(
         satelital, clasifica_colores, geometria
     )
 
-    html = generar_html(bytes_sat, bytes_clas, limites, nombres, porcentajes)
+    html = generar_html(
+        bytes_sat, bytes_clas, limites, geojson, etiquetas, porcentajes
+    )
 
     ruta = carpeta / "comparacion.html"
     ruta.write_text(html, encoding="utf-8")
@@ -321,75 +377,115 @@ _PLANTILLA = """<!DOCTYPE html>
 html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
 #mapa { height: 100%; width: 100%; background: #dfe6e9; }
 
-/* Panel de control lateral */
-#panel {
-  position: absolute; top: 12px; right: 12px; z-index: 1000;
-  background: rgba(255,255,255,.96); border-radius: 10px;
-  padding: 14px 16px; box-shadow: 0 3px 14px rgba(0,0,0,.28);
-  width: 232px; box-sizing: border-box; font-size: 13px;
-}
-#panel h3 { margin: 0 0 8px; font-size: 14px; }
-#panel .grupo { margin-bottom: 12px; }
-#panel .grupo > b {
-  display: block; margin-bottom: 6px; font-size: 11px;
-  color: #666; text-transform: uppercase; letter-spacing: .5px;
-}
-#panel label { display: block; margin: 4px 0; cursor: pointer; }
-#panel input { margin-right: 6px; vertical-align: -1px; }
+/* ---------------------------------------------------------------------------
+   Medidas de la interfaz. Se repiten en JavaScript (MARGEN_IZQ / MARGEN_SUP)
+   para posicionar el divisor y encuadrar el mapa fuera de estos paneles.
+   --------------------------------------------------------------------------- */
+:root { --ancho-lateral: 264px; --alto-cabecera: 54px; }
 
-/* Divisor del swipe */
+/* Barra superior de ancho completo */
+#cabecera {
+  position: absolute; top: 0; left: 0; right: 0;
+  height: var(--alto-cabecera); box-sizing: border-box; z-index: 1300;
+  background: #1e1e22; color: #fff; padding: 0 22px;
+  display: flex; flex-direction: column; justify-content: center;
+  box-shadow: 0 2px 12px rgba(0,0,0,.45);
+}
+#cabecera b { font-size: 16px; }
+#cabecera small { font-size: 12px; opacity: .72; margin-top: 1px; }
+
+/* Panel lateral izquierdo en gris oscuro, con dos módulos apilados */
+#lateral {
+  position: absolute; top: var(--alto-cabecera); left: 0; bottom: 0;
+  width: var(--ancho-lateral); box-sizing: border-box; z-index: 1200;
+  background: #2b2b30; color: #e6e6ea; padding: 12px;
+  overflow-y: auto; box-shadow: 3px 0 14px rgba(0,0,0,.4);
+}
+#lateral section {
+  background: #35353c; border-radius: 8px; padding: 12px 14px; margin-bottom: 12px;
+}
+#lateral section:last-child { margin-bottom: 0; }
+#lateral h3 {
+  margin: 0 0 10px; padding-bottom: 7px; font-size: 12.5px; color: #fff;
+  text-transform: uppercase; letter-spacing: .7px;
+  border-bottom: 1px solid rgba(255,255,255,.14);
+}
+#lateral .grupo { margin-bottom: 13px; }
+#lateral .grupo:last-child { margin-bottom: 0; }
+#lateral .grupo > b {
+  display: block; margin-bottom: 6px; font-size: 10.5px;
+  color: #9b9ba3; text-transform: uppercase; letter-spacing: .6px;
+}
+#lateral label { display: block; margin: 5px 0; cursor: pointer; font-size: 13px; }
+#lateral input { margin-right: 7px; vertical-align: -1px; }
+#lateral select {
+  width: 100%; margin-top: 5px; padding: 4px; font-size: 12px;
+  border: 1px solid #55555c; border-radius: 5px;
+  background: #232328; color: #e6e6ea;
+}
+
+/* Leyenda dentro del módulo superior */
+.fila-leyenda { display: flex; align-items: center; margin: 4px 0; font-size: 12.5px; }
+.fila-leyenda .pct {
+  margin-left: auto; padding-left: 10px; color: #b6b6be;
+  font-variant-numeric: tabular-nums;
+}
+.cuadro {
+  width: 14px; height: 14px; border-radius: 3px; margin-right: 9px; flex: none;
+  border: 1px solid rgba(255,255,255,.28);
+}
+.resumen-fila {
+  display: flex; justify-content: space-between; margin: 4px 0; font-size: 13px;
+}
+.resumen-fila b { color: #fff; }
+
+/* Divisor del swipe: empieza debajo de la barra superior. La posición
+   horizontal la fija JavaScript dentro del área visible (ver refrescar). */
 #divisor {
-  position: absolute; top: 0; left: 50%; height: 100%; width: 40px;
-  transform: translateX(-50%); z-index: 1100; cursor: ew-resize;
+  position: absolute; top: var(--alto-cabecera); bottom: 0; width: 40px;
+  left: 50%; transform: translateX(-50%); z-index: 1150; cursor: ew-resize;
   display: flex; align-items: center; justify-content: center;
 }
 #divisor .linea {
   position: absolute; top: 0; left: 50%; width: 3px; height: 100%;
   transform: translateX(-50%); background: #fff;
-  box-shadow: 0 0 6px rgba(0,0,0,.55);
+  box-shadow: 0 0 7px rgba(0,0,0,.6);
 }
 #divisor .pomo {
   position: relative; width: 38px; height: 38px; border-radius: 50%;
-  background: #fff; border: 3px solid #2d3436;
+  background: #fff; border: 3px solid #1e1e22;
   display: flex; align-items: center; justify-content: center;
-  box-shadow: 0 2px 8px rgba(0,0,0,.45); font-size: 15px; color: #2d3436;
+  box-shadow: 0 2px 9px rgba(0,0,0,.5); font-size: 15px; color: #1e1e22;
 }
 #divisor.oculto { display: none; }
 
-/* Etiquetas de lado: en el pie, para no chocar con el título ni el panel */
+/* Etiquetas de cada lado, en el pie */
 .etiqueta-lado {
-  position: absolute; z-index: 900; bottom: 28px; padding: 6px 12px;
-  background: rgba(0,0,0,.72); color: #fff; border-radius: 6px;
+  position: absolute; z-index: 1000; bottom: 30px; padding: 6px 13px;
+  background: rgba(20,20,22,.82); color: #fff; border-radius: 6px;
   font-size: 13px; font-weight: 600; pointer-events: none;
 }
-.etiqueta-izq { left: 78px; }
-.etiqueta-der { right: 218px; }
+.etiqueta-izq { left: calc(var(--ancho-lateral) + 14px); }
+.etiqueta-der { right: 14px; }
 
-/* Leyenda */
-#leyenda {
-  position: absolute; bottom: 26px; right: 12px; z-index: 1000;
-  background: rgba(255,255,255,.96); border-radius: 10px;
-  padding: 12px 14px; box-shadow: 0 3px 14px rgba(0,0,0,.28);
-  font-size: 12px; max-height: 40%; overflow-y: auto; width: 190px;
-}
-#leyenda h3 { margin: 0 0 8px; font-size: 13px; }
-.fila-leyenda { display: flex; align-items: center; margin: 3px 0; }
-.fila-leyenda .pct { margin-left: auto; color: #555; padding-left: 10px; }
-.cuadro {
-  width: 14px; height: 14px; border-radius: 3px; margin-right: 8px;
-  border: 1px solid rgba(0,0,0,.2); flex: none;
+/* Límites municipales: línea amarilla intensa con contorno oscuro para que
+   se lea tanto sobre la foto satelital (verde oscuro) como sobre la
+   clasificación (verde y rojo). */
+.limites-muni {
+  filter: drop-shadow(0 0 2.5px rgba(0,0,0,1)) drop-shadow(0 0 2.5px rgba(0,0,0,1));
 }
 
-/* Barra de título: se centra en el espacio libre entre el control de zoom
-   (izquierda) y el panel de opciones (derecha), así nunca se solapan. */
-#cabecera {
-  position: absolute; top: 12px; left: 78px; right: 262px;
-  z-index: 1000; background: rgba(0,0,0,.78); color: #fff;
-  padding: 9px 20px; border-radius: 8px; text-align: center;
-  pointer-events: none; box-shadow: 0 3px 14px rgba(0,0,0,.3);
+/* Nombres de municipios: solo texto con sombra, sin caja que tape el mapa */
+.nombre-muni {
+  color: #fff; font-weight: 700; font-size: 14px; white-space: nowrap;
+  text-shadow: 0 0 5px #000, 0 0 5px #000, 0 0 3px #000, 0 2px 4px #000;
+  transform: translate(-50%, -50%); padding: 2px 3px;
 }
-#cabecera b { font-size: 15px; }
-#cabecera small { display: block; opacity: .85; margin-top: 2px; }
+
+/* Los controles de Leaflet se anclan al borde del contenedor del mapa, que
+   arranca detrás de la barra superior: se desplazan para no quedar tapados. */
+.leaflet-top.leaflet-right    { top: var(--alto-cabecera); }
+.leaflet-bottom.leaflet-right { bottom: 26px; }
 </style>
 </head>
 <body>
@@ -400,46 +496,50 @@ html, body { height: 100%; margin: 0; font-family: system-ui, sans-serif; }
   <small>Dynamic World · Sentinel-2 · @@FECHA_INICIO@@ a @@FECHA_FIN@@</small>
 </div>
 
+<aside id="lateral">
+
+  <section id="leyenda">
+    <h3>Tipos de cobertura</h3>
+    @@LEYENDA@@
+  </section>
+
+  <section id="panel">
+    <h3>Visualización</h3>
+
+    <div class="grupo">
+      <b>Modo</b>
+      <label><input type="radio" name="modo" value="swipe" checked> Comparar (swipe)</label>
+      <label><input type="radio" name="modo" value="clas"> Solo clasificación</label>
+      <label><input type="radio" name="modo" value="sat"> Solo satelital</label>
+    </div>
+
+    <div class="grupo">
+      <b>Capas</b>
+      <label><input type="checkbox" id="cLimites" checked> Límites municipales</label>
+      <label><input type="checkbox" id="cNombres" checked> Nombres</label>
+      <label><input type="checkbox" id="cBase" checked> Mapa base</label>
+      <select id="selBase">
+        <option value="satelite">Satélite (Esri)</option>
+        <option value="calles">Calles (Esri)</option>
+        <option value="topografico">Topográfico (Esri)</option>
+        <option value="opentopo">Topográfico (OpenTopoMap)</option>
+      </select>
+    </div>
+
+    <div class="grupo">
+      <b>Cobertura dominante</b>
+      @@RESUMEN@@
+    </div>
+  </section>
+
+</aside>
+
 <div class="etiqueta-lado etiqueta-izq">🛰️ Imagen satelital</div>
 <div class="etiqueta-lado etiqueta-der">🤖 Clasificación IA</div>
 
 <div id="divisor">
   <div class="linea"></div>
   <div class="pomo">⟷</div>
-</div>
-
-<div id="panel">
-  <h3>🎛️ Visualización</h3>
-
-  <div class="grupo">
-    <b>Modo</b>
-    <label><input type="radio" name="modo" value="swipe" checked> Comparar (swipe)</label>
-    <label><input type="radio" name="modo" value="clas"> Solo clasificación</label>
-    <label><input type="radio" name="modo" value="sat"> Solo satelital</label>
-  </div>
-
-  <div class="grupo">
-    <b>Capas</b>
-    <label><input type="checkbox" id="cLimites" checked> Límites municipales</label>
-    <label><input type="checkbox" id="cNombres" checked> Nombres</label>
-    <label><input type="checkbox" id="cBase" checked> Mapa base</label>
-    <select id="selBase" style="width:100%;margin-top:5px;padding:3px">
-      <option value="satelite">Satélite (Esri)</option>
-      <option value="calles">Calles (Esri)</option>
-      <option value="topografico">Topográfico (Esri)</option>
-      <option value="opentopo">Topográfico (OpenTopoMap)</option>
-    </select>
-  </div>
-
-  <div class="grupo" style="margin-bottom:0">
-    <b>Cobertura dominante</b>
-    @@RESUMEN@@
-  </div>
-</div>
-
-<div id="leyenda">
-  <h3>Tipos de cobertura</h3>
-  @@LEYENDA@@
 </div>
 
 <script>
@@ -457,8 +557,20 @@ var PORCENTAJES = @@PORCENTAJES@@;
 /* zoomSnap: 0 permite zoom con decimales, para que fitBounds encuadre
    exactamente los límites sin dejar bandas vacías cuando la forma de la
    zona no coincide con la forma de la ventana. */
-var mapa = L.map('mapa', {zoomSnap: 0, zoomDelta: 0.5}).fitBounds(LIMITES, {padding: [24, 24]});
-L.control.scale({imperial: false}).addTo(mapa);
+var MARGEN_IZQ = 264;   /* ancho del panel lateral (ver --ancho-lateral) */
+var MARGEN_SUP = 54;    /* alto de la barra superior (ver --alto-cabecera) */
+
+var mapa = L.map('mapa', {zoomSnap: 0, zoomDelta: 0.5});
+/* El encuadre descuenta el panel lateral y la barra superior, para que
+   los municipios queden centrados en el área realmente visible. */
+mapa.fitBounds(LIMITES, {
+  paddingTopLeft:  [MARGEN_IZQ + 24, MARGEN_SUP + 24],
+  paddingBottomRight: [24, 24]
+});
+/* Los controles por defecto quedan tapados por el panel, así que se
+   mueven a la esquina libre. */
+L.control.zoom({position: 'topright'}).addTo(mapa);
+L.control.scale({imperial: false, position: 'bottomright'}).addTo(mapa);
 
 /* Mapas base.
    Requisito: funcionar sin clave de API y sin bloquearse al abrir el
@@ -507,7 +619,13 @@ var sat  = L.imageOverlay(URL_SAT,  LIMITES).addTo(mapa);
 var clas = L.imageOverlay(URL_CLAS, LIMITES).addTo(mapa);
 
 var capaLimites = L.geoJSON(GEOJSON, {
-  style: {color: '#2d3436', weight: 2.5, fill: false, dashArray: '6 4'}
+  /* Los polígonos REALES de los municipios (FAO/GAUL, los mismos con los
+     que se recortó la clasificación, así el contorno calza exactamente
+     con el borde de los colores). Trazo gris claro discontinuo con doble
+     contorno oscuro (clase .limites-muni) para que se lea igual sobre la
+     foto satelital oscura que sobre los verdes y rojos de la clasificación. */
+  className: 'limites-muni',
+  style: {color: '#d9d9d9', weight: 2.5, fill: false, dashArray: '12 7'}
 }).addTo(mapa);
 
 var capaNombres = L.layerGroup().addTo(mapa);
@@ -516,10 +634,8 @@ ETIQUETAS.forEach(function (item) {
     interactive: false,
     icon: L.divIcon({
       className: '',
-      html: '<div style="background:rgba(255,255,255,.92);padding:4px 10px;'
-          + 'border-radius:6px;font-weight:700;font-size:13px;white-space:nowrap;'
-          + 'border:1px solid rgba(0,0,0,.25);box-shadow:0 1px 4px rgba(0,0,0,.3)">'
-          + item.nombre + '</div>',
+      /* Solo texto con sombra: sin caja de fondo, para no tapar el mapa. */
+      html: '<div class="nombre-muni">' + item.nombre + '</div>',
       iconSize: [0, 0]
     })
   }).addTo(capaNombres);
@@ -540,12 +656,23 @@ var posDivisor = 0.5;      /* posición relativa del divisor (0 a 1) */
 var modoActual = 'swipe';
 var elDivisor  = document.getElementById('divisor');
 
+/* El área realmente visible es la que queda a la derecha del panel
+   lateral: sobre ella se calculan tanto la posición del divisor como el
+   recorte de la clasificación. */
+function areaVisible() {
+  var rect = mapa.getContainer().getBoundingClientRect();
+  return {
+    izquierda: rect.left + MARGEN_IZQ,
+    ancho: Math.max(1, rect.width - MARGEN_IZQ)
+  };
+}
+
 function aplicarClip() {
   var elClas = clas.getElement();
   if (!elClas) return;
 
-  var rect = mapa.getContainer().getBoundingClientRect();
-  var xDivisor = rect.left + posDivisor * rect.width;
+  var vis = areaVisible();
+  var xDivisor = vis.izquierda + posDivisor * vis.ancho;
 
   /* La imagen satelital es la capa base y SIEMPRE se ve completa.
      Lo que se recorta es la clasificación: se oculta a la izquierda del
@@ -561,7 +688,11 @@ function quitarClip() {
 }
 
 function refrescar() {
-  elDivisor.style.left = (posDivisor * 100) + '%';
+  /* Se fija en píxeles dentro del área visible; el translateX(-50%) del
+     CSS centra el pomito sobre esa posición. */
+  var vis = areaVisible();
+  elDivisor.style.left = (vis.izquierda - mapa.getContainer().getBoundingClientRect().left
+                          + posDivisor * vis.ancho) + 'px';
   if (modoActual === 'swipe') aplicarClip();
 }
 
@@ -600,8 +731,10 @@ function posicionX(e) {
 }
 function alMover(e) {
   if (!arrastrando) return;
-  var rect = mapa.getContainer().getBoundingClientRect();
-  posDivisor = Math.min(1, Math.max(0, (posicionX(e) - rect.left) / rect.width));
+  /* Se calcula sobre el área visible (a la derecha del panel lateral),
+     así el divisor no puede acabar oculto bajo la barra lateral. */
+  var vis = areaVisible();
+  posDivisor = Math.min(1, Math.max(0, (posicionX(e) - vis.izquierda) / vis.ancho));
   refrescar();
   e.preventDefault();
 }
