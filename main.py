@@ -9,6 +9,7 @@ Flujo:
     3. Clasifica con Dynamic World (Sentinel-2, 10 m)
     4. Calcula estadísticas (% por tipo de cobertura)
     5. Guarda mapa PNG, estadísticas CSV y ráster GeoTIFF en ./salidas/
+    6. Genera el visor interactivo comparacion.html (opcional)
 """
 
 import sys
@@ -65,6 +66,13 @@ def main() -> None:
 
     gdf = zonas.a_geodataframe(municipios)
     reporte.graficar_mapa(ruta_tif, gdf, porcentajes, ruta_png)
+
+    # 6. Visor interactivo (opcional) --------------------------------------
+    if config.GENERAR_VISOR:
+        import comparar
+        comparar.crear_comparacion(
+            geometria, imagen, municipios, porcentajes, config.CARPETA_SALIDA
+        )
 
     # Resumen en consola --------------------------------------------------
     print("\n--- RESULTADO (% de superficie) ---")

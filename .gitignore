@@ -15,5 +15,6 @@ __pycache__/
 *.py[cod]
 .pytest_cache/
 
-# Salidas pesadas (el mapa PNG y CSV sí se pueden subir)
+# Salidas pesadas generadas (el mapa PNG y el CSV sí se pueden subir)
 salidas/*.tif
+salidas/comparacion.html

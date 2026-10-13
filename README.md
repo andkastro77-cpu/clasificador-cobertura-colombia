@@ -92,11 +92,38 @@ Los resultados se guardan en la carpeta `salidas/`:
 - **`mapa_cobertura_sabaneta_envigado.png`** — mapa temático con leyenda y límites municipales
 - **`estadisticas_sabaneta_envigado.csv`** — porcentaje de superficie por tipo de cobertura
 - **`cobertura_sabaneta_envigado.tif`** — ráster georreferenciado (compatible con QGIS)
+- **`comparacion.html`** — visor interactivo con comparación deslizante (ver abajo)
+
+## Visor interactivo: satélite vs IA
+
+`comparacion.html` es un archivo que se abre con **doble clic** en
+cualquier navegador. No necesita instalar nada y contiene todo dentro de
+un solo archivo (imágenes en base64 + librerías incrustadas), así que
+**funciona sin conexión a internet**, salvo el mapa base de calles.
+
+![Visor interactivo](docs/visor.jpg)
+
+| Herramienta | Qué hace |
+|---|---|
+| **Divisor deslizante** (⟶) | Arrástralo con el mouse para revelar la imagen satelital a un lado y la clasificación de la IA al otro. Es la misma idea que la herramienta de comparación de **ERDAS Imagine**. Doble clic lo devuelve al centro. |
+| **Modo** | Alterna entre *Comparar (swipe)*, *Solo clasificación* y *Solo satelital*. |
+| **Capas** | Enciende o apaga los límites municipales, los nombres y el mapa base de calles. |
+| **Leyenda** | Muestra los 9 tipos de cobertura con su porcentaje calculado. |
+
+La imagen satelital es una **composición en color natural** (rojo, verde y
+azul) de Sentinel-2, promediando todas las escenas sin nubes del período
+para eliminar las nubes. Las dos capas se descargan con el mismo tamaño
+de píxel para que el divisor compare exactamente el mismo terreno.
+
+Para cambiar el ancho de las capas (más detalle = archivo más pesado),
+ajusta `ANCHO_MAXIMO` en `comparar.py`. Para desactivar el visor, pon
+`GENERAR_VISOR = False` en `config.py`.
 
 ## Visualizar los resultados
 
 | Resultado | Cómo verlo |
 |---|---|
+| Visor interactivo | Doble clic en `comparacion.html` (se abre en el navegador) |
 | Mapa PNG | Doble clic en el archivo (VS Code lo muestra sin salir) |
 | Estadísticas CSV | Abrirlo como texto, o con la extensión *Rainbow CSV* para verlo en columnas |
 | Ráster GeoTIFF | Con **QGIS**, o ejecutando el script incluido: |
@@ -118,8 +145,10 @@ clasificador-cobertura-colombia/
 ├── zonas.py       # Límites de Sabaneta y Envigado (FAO/GAUL)
 ├── clasificar.py  # Motor: Sentinel-2 + Dynamic World
 ├── reporte.py     # Mapa PNG, estadísticas CSV y descarga GeoTIFF
+├── comparar.py    # Visor interactivo comparacion.html (swipe satélite vs IA)
 ├── main.py        # Orquestador del flujo completo
 ├── ver_raster.py  # Muestra el GeoTIFF en pantalla (alternativa a QGIS)
+├── visor/         # Librerías Leaflet incrustadas en el HTML (no editar)
 ├── requirements.txt
 └── salidas/       # Resultados generados
 ```
@@ -132,6 +161,7 @@ Todo se ajusta en **`config.py`**:
 - `FECHA_INICIO` / `FECHA_FIN` — período de análisis
 - `MAX_NUBES` — umbral de nubes por escena (%)
 - `ESCALA_M` — resolución del ráster de salida
+- `GENERAR_VISOR` — activar o desactivar el visor interactivo
 
 ## Licencia
 

@@ -39,6 +39,11 @@ ESCALA_M = 10
 # Proyección del ráster exportado (UTM zona 18N, corresponde a Antioquia).
 CRS_SALIDA = "EPSG:32618"
 
+# Generar el visor interactivo comparacion.html (imagen satelital vs
+# clasificación, con divisor arrastrable tipo ERDAS). Descarga Sentinel-2
+# una segunda vez, así que añade ~30 segundos al proceso.
+GENERAR_VISOR = True
+
 # ---------------------------------------------------------------------------
 # 4. CARPETAS DE SALIDA
 # ---------------------------------------------------------------------------
