@@ -1,8 +1,12 @@
 """Límites administrativos de los municipios de estudio.
 
-Usa la colección FAO/GAUL/2015/level2 (bordes administrativos mundiales
-gratuitos disponibles en Google Earth Engine) y filtra los municipios
-indicados en config.MUNICIPIOS.
+Usa la colección FAO/GAUL (bordes administrativos mundiales gratuitos
+disponibles en Google Earth Engine).
+
+Importante: GAUL/2025 renombró los campos respecto a GAUL/2015:
+    2015: ADM0_NAME, ADM2_NAME
+    2025: GAUL0_NAME, GAUL2_NAME  (y el país también se puede buscar por ISO3_CODE)
+Esta función detecta automáticamente qué nombres usa cada versión.
 """
 
 import geopandas as gpd
@@ -11,35 +15,54 @@ from shapely.geometry import shape
 import ee
 import config
 
+# Versiones del dataset, de la más nueva a la más vieja.
+ASSETS_GAUL = ("FAO/GAUL/2025/level2", "FAO/GAUL/2015/level2")
+
+
+def _campos_pais_municipio(coleccion: ee.FeatureCollection) -> tuple[str, str]:
+    """Detecta los nombres de campo del país y del municipio."""
+    campos = coleccion.first().propertyNames().getInfo()
+
+    campo_pais = next((c for c in ("GAUL0_NAME", "ADM0_NAME") if c in campos), None)
+    campo_mun = next((c for c in ("GAUL2_NAME", "ADM2_NAME") if c in campos), None)
+
+    if not campo_pais or not campo_mun:
+        raise RuntimeError(f"Campos inesperados en el dataset: {campos}")
+    return campo_pais, campo_mun
+
+
+def _buscar_en(asset: str) -> ee.FeatureCollection | None:
+    """Intenta localizar los municipios en un asset; None si no están."""
+    try:
+        coleccion = ee.FeatureCollection(asset)
+        campo_pais, campo_mun = _campos_pais_municipio(coleccion)
+
+        filtro = ee.Filter.And(
+            ee.Filter.eq(campo_pais, config.PAIS),
+            ee.Filter.inList(campo_mun, config.MUNICIPIOS),
+        )
+        municipios = coleccion.filter(filtro)
+
+        if municipios.size().getInfo() == 0:
+            return None
+        return municipios
+
+    except Exception as error:
+        print(f"[AVISO] No se pudo usar {asset}: {type(error).__name__}")
+        return None
+
 
 def obtener_municipios() -> ee.FeatureCollection:
-    """Devuelve los límites de Sabaneta y Envigado como FeatureCollection.
-
-    Usa el asset FAO/GAUL/2025 (bordes administrativos mundiales) y, si
-    aún no estuviera disponible, regresa al clásico GAUL/2015.
-    """
-    for asset in ("FAO/GAUL/2025/level2", "FAO/GAUL/2015/level2"):
-        try:
-            gaul = ee.FeatureCollection(asset)
-            municipios = gaul.filter(_filtro_municipios())
-            cantidad = municipios.size().getInfo()
-            if cantidad > 0:
-                print(f"[OK] {cantidad} municipio(s) en {asset}: {config.MUNICIPIOS}")
-                return municipios
-        except Exception as advertencia:
-            print(f"[AVISO] {asset} no disponible ({type(advertencia).__name__})")
+    """Devuelve los límites de Sabaneta y Envigado como FeatureCollection."""
+    for asset in ASSETS_GAUL:
+        municipios = _buscar_en(asset)
+        if municipios is not None:
+            print(f"[OK] Municipios localizados en {asset}: {config.MUNICIPIOS}")
+            return municipios
 
     raise SystemExit(
         f"No se encontraron los municipios {config.MUNICIPIOS} en GAUL. "
         "Verifica los nombres (deben coincidir exactamente)."
-    )
-
-
-def _filtro_municipios() -> ee.Filter:
-    """Filtro: país = Colombia y nombre del municipio en la lista."""
-    return ee.Filter.And(
-        ee.Filter.eq("ADM0_NAME", config.PAIS),
-        ee.Filter.inList("ADM2_NAME", config.MUNICIPIOS),
     )
 
 
@@ -53,7 +76,7 @@ def a_geodataframe(municipios: ee.FeatureCollection) -> gpd.GeoDataFrame:
     geojson = municipios.getInfo()  # descarga los límites al PC
     registros = [
         {
-            "nombre": props.get("ADM2_NAME", ""),
+            "nombre": props.get("GAUL2_NAME") or props.get("ADM2_NAME", ""),
             "geometry": shape(feat["geometry"]),
         }
         for feat in geojson["features"]
